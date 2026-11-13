@@ -8,6 +8,7 @@ import PIL.Image
 import numpy as np
 import os
 from prettytable import PrettyTable
+from pathlib import Path
 import time
 
 def read_mp4(name_path):
@@ -41,11 +42,11 @@ def draw_pts_gpu(rgbs, trajs, visibs, colormap, rate=1, bkg_opacity=0.5):
     elif rate==2:
         radius = 1
     elif rate== 4:
-        radius = 2
+        radius = 1
     elif rate== 8:
-        radius = 4
+        radius = 2
     else:
-        radius = 6
+        radius = 2
     sharpness = 0.15 + 0.05 * np.log2(rate)
     
     D = radius * 2 + 1
@@ -152,6 +153,21 @@ def forward_video(rgbs, framerate, model, args):
     colors = utils.improc.get_2d_colors(xy0, H, W)
 
     fn = args.mp4_path.split('/')[-1].split('.')[0]
+
+    # Create directory for point tracks to live based on argument passed, and save them combined in a .npz file
+    # saves the numpy trajectory arrays and confidence values for each point.
+    
+    tracks_out_dir = args.out_folder
+    tracks_out_dir.mkdir(parents=True, exist_ok=True)
+    tracks_out_path = tracks_out_dir / f'tracks_{fn}_rate{rate}_q{args.query_frame}.npz'
+    np.savez(
+        tracks_out_path,
+        trajs=trajs_e[0].cpu().numpy(),        # (T, N, 2): x, y per point per frame, in resized-frame pixels
+        visconfs=visconfs_e[0].cpu().numpy(),  # (T, N, 2): channel 1 is the confidence the demo uses
+        H=H, W=W,                              # resized frame size the coordinates refer to
+    )
+    print(f'Saved tracks to: {tracks_out_path}')
+
     rgb_out_f = './pt_vis_%s_rate%d_q%d.mp4' % (fn, rate, args.query_frame)
     print('rgb_out_f', rgb_out_f)
     temp_dir = 'temp_pt_vis_%s_rate%d_q%d' % (fn, rate, args.query_frame)
@@ -258,6 +274,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--ckpt_init", type=str, default='') # the ckpt we want (else default)
     parser.add_argument("--mp4_path", type=str, default='./demo_video/monkey.mp4') # input video 
+    parser.add_argument("--out_folder", type=Path, default='./') # folder we want to save the .npz tracks to
     parser.add_argument("--query_frame", type=int, default=0) # which frame to track from
     parser.add_argument("--image_size", type=int, default=1024) # max dimension of a video frame (upsample to this)
     parser.add_argument("--max_frames", type=int, default=400) # trim the video to this length
